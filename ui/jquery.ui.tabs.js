@@ -13,15 +13,9 @@
  */
 (function( $, undefined ) {
 
-var tabId = 0,
-	listId = 0;
-
+var tabId = 0
 function getNextTabId() {
 	return ++tabId;
-}
-
-function getNextListId() {
-	return ++listId;
 }
 
 $.widget( "ui.tabs", {
@@ -108,15 +102,7 @@ $.widget( "ui.tabs", {
 			var panel = that._getPanelForTab( this.active );
 
 			panel.show();
-
 			this.lis.eq( options.active ).addClass( "ui-tabs-active ui-state-active" );
-
-			// TODO: we need to remove this or add it to accordion
-			// seems to be expected behavior that the activate callback is fired
-			that.element.queue( "tabs", function() {
-				that._trigger( "activate", null, that._ui( that.active[ 0 ], panel[ 0 ] ) );
-			});
-
 			this.load( options.active );
 		} else {
 			this.active = $();
@@ -159,14 +145,6 @@ $.widget( "ui.tabs", {
 	_sanitizeSelector: function( hash ) {
 		// we need this because an id may contain a ":"
 		return hash ? hash.replace( /:/g, "\\:" ) : "";
-	},
-
-	_ui: function( tab, panel ) {
-		return {
-			tab: tab,
-			panel: panel,
-			index: this.anchors.index( tab )
-		};
 	},
 
 	refresh: function() {
@@ -417,52 +395,26 @@ $.widget( "ui.tabs", {
 			that.xhr.abort();
 		}
 
-		// if tab may be closed
-		if ( options.collapsible ) {
-			if ( collapsing ) {
-				options.active = false;
-
-				that.element.queue( "tabs", function() {
-					that._hideTab( event, eventData );
-				}).dequeue( "tabs" );
-
-				clicked[ 0 ].blur();
-				return;
-			} else if ( !toHide.length ) {
-				that.element.queue( "tabs", function() {
-					that._showTab( event, eventData );
-				});
-
-				// TODO make passing in node possible, see also http://dev.jqueryui.com/ticket/3171
-				that.load( that.anchors.index( clicked ), event );
-
-				clicked[ 0 ].blur();
-				return;
-			}
+		if ( !toHide.length && !toShow.length ) {
+			throw "jQuery UI Tabs: Mismatching fragment identifier.";
 		}
 
-		// show new tab
+		if ( toHide.length ) {
+			that.element.queue( "tabs", function() {
+				that._hideTab( event, eventData );
+			});
+		}
 		if ( toShow.length ) {
-			if ( toHide.length ) {
-				that.element.queue( "tabs", function() {
-					that._hideTab( event, eventData );
-				});
-			}
 			that.element.queue( "tabs", function() {
 				that._showTab( event, eventData );
 			});
 
+			// TODO make passing in node possible, see also http://dev.jqueryui.com/ticket/3171
 			that.load( that.anchors.index( clicked ), event );
-		} else {
-			throw "jQuery UI Tabs: Mismatching fragment identifier.";
-		}
 
-		// Prevent IE from keeping other link focussed when using the back button
-		// and remove dotted border from clicked link. This is controlled via CSS
-		// in modern browsers; blur() removes focus from address bar in Firefox
-		// which can become a usability
-		if ( $.browser.msie ) {
 			clicked[ 0 ].blur();
+		} else {
+			that.element.dequeue( "tabs" );
 		}
 	},
 
@@ -621,6 +573,7 @@ $.widget( "ui.tabs", {
 			this.xhr
 				.success(function( response ) {
 					panel.html( response );
+					self._trigger( "load", event, eventData );
 				})
 				.complete(function( jqXHR, status ) {
 					if ( status === "abort" ) {
@@ -631,13 +584,11 @@ $.widget( "ui.tabs", {
 						// "tabs" queue must not contain more than two elements,
 						// which are the callbacks for the latest clicked tab...
 						self.element.queue( "tabs", self.element.queue( "tabs" ).splice( -2, 2 ) );
-
-						delete this.xhr;
 					}
 
 					self.lis.eq( index ).removeClass( "ui-tabs-loading" );
 
-					self._trigger( "load", event, eventData );
+					delete self.xhr;
 				});
 		}
 
@@ -659,6 +610,15 @@ $.extend( $.ui.tabs, {
 
 // DEPRECATED
 if ( $.uiBackCompat !== false ) {
+
+	// helper method for a lot of the back compat extensions
+	$.ui.tabs.prototype._ui = function( tab, panel ) {
+		return {
+			tab: tab,
+			panel: panel,
+			index: this.anchors.index( tab )
+		};
+	};
 
 	// url method
 	(function( $, prototype ) {
@@ -685,7 +645,7 @@ if ( $.uiBackCompat !== false ) {
 
 				var self = this;
 
-				this.element.bind( "tabsbeforeload", function( event, ui ) {
+				this.element.bind( "tabsbeforeload.tabs", function( event, ui ) {
 					// tab is already cached
 					if ( $.data( ui.tab[ 0 ], "cache.tabs" ) ) {
 						event.preventDefault();
@@ -705,7 +665,7 @@ if ( $.uiBackCompat !== false ) {
 						}
 					});
 
-					ui.jqXHR.success( function() {
+					ui.jqXHR.success(function() {
 						if ( self.options.cache ) {
 							$.data( ui.tab[ 0 ], "cache.tabs", true );
 						}
@@ -743,34 +703,28 @@ if ( $.uiBackCompat !== false ) {
 	}( jQuery, jQuery.ui.tabs.prototype ) );
 
 	// spinner
-	(function( $, prototype ) {
-		$.extend( prototype.options, {
+	$.widget( "ui.tabs", $.ui.tabs, {
+		options: {
 			spinner: "<em>Loading&#8230;</em>"
-		});
-
-		var _create = prototype._create;
-		prototype._create = function() {
-			_create.call( this );
-			var self = this;
-
-			this.element.bind( "tabsbeforeload", function( event, ui ) {
-				if ( self.options.spinner ) {
-					var span = $( "span", ui.tab );
-					if ( span.length ) {
-						span.data( "label.tabs", span.html() ).html( self.options.spinner );
+		},
+		_create: function() {
+			this._super( "_create" );
+			this._bind({
+				tabsbeforeload: function( event, ui ) {
+					if ( !this.options.spinner ) {
+						return;
 					}
+	
+					var span = ui.tab.find( "span" ),
+						html = span.html();
+					span.html( this.options.spinner );
+					ui.jqXHR.complete(function() {
+						span.html( html );
+					});
 				}
-				ui.jqXHR.complete( function() {
-					if ( self.options.spinner ) {
-						var span = $( "span", ui.tab );
-						if ( span.length ) {
-							span.html( span.data( "label.tabs" ) ).removeData( "label.tabs" );
-						}
-					}
-				});
 			});
-		};
-	}( jQuery, jQuery.ui.tabs.prototype ) );
+		}
+	});
 
 	// enable/disable events
 	(function( $, prototype ) {
@@ -975,21 +929,33 @@ if ( $.uiBackCompat !== false ) {
 			show: null,
 			select: null
 		});
-		var _trigger = prototype._trigger;
+		var _create = prototype._create,
+			_trigger = prototype._trigger;
 
+		prototype._create = function() {
+			_create.call( this );
+			if ( this.options.active !== false ) {
+				this._trigger( "show", null, this._ui(
+					this.active[ 0 ], this._getPanelForTab( this.active )[ 0 ] ) );
+			}
+		}
 		prototype._trigger = function( type, event, data ) {
 			var ret = _trigger.apply( this, arguments );
 			if ( !ret ) {
 				return false;
 			}
-			if ( type === "beforeActivate" ) {
+			if ( type === "beforeActivate" && data.newTab.length ) {
 				ret = _trigger.call( this, "select", event, {
 					tab: data.newTab[ 0],
 					panel: data.newPanel[ 0 ],
 					index: data.newTab.closest( "li" ).index()
 				});
-			} else if ( type === "activate" ) {
-				ret = _trigger.call( this, "show", event, data );
+			} else if ( type === "activate" && data.newTab.length ) {
+				ret = _trigger.call( this, "show", event, {
+					tab: data.newTab[ 0 ],
+					panel: data.newPanel[ 0 ],
+					index: data.newTab.closest( "li" ).index()
+				});
 			}
 		};
 	}( jQuery, jQuery.ui.tabs.prototype ) );
@@ -1010,57 +976,54 @@ if ( $.uiBackCompat !== false ) {
 	}( jQuery, jQuery.ui.tabs.prototype ) );
 
 	// cookie option
-	(function( $, prototype ) {
-		$.extend( prototype.options, {
+	var listId = 0;
+	function getNextListId() {
+		return ++listId;
+	}
+	$.widget( "ui.tabs", $.ui.tabs, {
+		options: {
 			cookie: null // e.g. { expires: 7, path: '/', domain: 'jquery.com', secure: true }
-		});
-
-		var _create = prototype._create,
-			_refresh = prototype._refresh,
-			_eventHandler = prototype._eventHandler,
-			_destroy = prototype._destroy;
-
-		prototype._create = function() {
-			var o = this.options;
-			if ( o.active === undefined ) {
-				if ( typeof o.active !== "number" && o.cookie ) {
-					o.active = parseInt( this._cookie(), 10 );
+		},
+		_create: function() {
+			var options = this.options,
+				active;
+			if ( options.active == null && options.cookie ) {
+				active = parseInt( this._cookie(), 10 );
+				if ( active === -1 ) {
+					active = false;
 				}
+				options.active = active;
 			}
-			_create.call( this );
-		};
-
-		prototype._cookie = function() {
-			var cookie = this.cookie ||
-				( this.cookie = this.options.cookie.name || "ui-tabs-" + getNextListId() );
-			return $.cookie.apply( null, [ cookie ].concat( $.makeArray( arguments ) ) );
-		};
-
-		prototype._refresh = function() {
-			_refresh.call( this );
-
-			// set or update cookie after init and add/remove respectively
+			this._super( "_create" );
+		},
+		_cookie: function( active ) {
+			var cookie = [ this.cookie ||
+				( this.cookie = this.options.cookie.name || "ui-tabs-" + getNextListId() ) ];
+			if ( arguments.length ) {
+				cookie.push( active === false ? -1 : active );
+				cookie.push( this.options.cookie );
+			}
+			return $.cookie.apply( null, cookie );
+		},
+		_refresh: function() {
+			this._super( "_refresh" );
 			if ( this.options.cookie ) {
 				this._cookie( this.options.active, this.options.cookie );
 			}
-		};
-
-		prototype._eventHandler = function( event ) {
-			_eventHandler.apply( this, arguments );
-
+		},
+		_eventHandler: function( event ) {
+			this._superApply( "_eventHandler", arguments );
 			if ( this.options.cookie ) {
 				this._cookie( this.options.active, this.options.cookie );
 			}
-		};
-
-		prototype._destroy = function() {
-			_destroy.call( this );
-
+		},
+		_destroy: function() {
+			this._super( "_destroy" );
 			if ( this.options.cookie ) {
 				this._cookie( null, this.options.cookie );
 			}
-		};
-	}( jQuery, jQuery.ui.tabs.prototype ) );
+		}
+	});
 }
 
 })( jQuery );
